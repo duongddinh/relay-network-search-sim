@@ -39,7 +39,7 @@ class DashboardRenderer:
     def draw_signal_overlay(self, env, screen):
         if not self.debug_draw_signal:
             return
-        cell = 60
+        cell = 20
         surface = pygame.Surface((SIM_WIDTH, SIM_HEIGHT), pygame.SRCALPHA)
         active_nodes = [(node_id, pkt) for node_id, pkt in env.active_packets.items() if pkt.freshness > 0]
         if not active_nodes:
@@ -52,9 +52,9 @@ class DashboardRenderer:
                 for node_id, pkt in active_nodes:
                     node = env.nodes[node_id]
                     d = dist((wx, wy), (node.x, node.y))
-                    node_score = max(0.0, (pkt.source_rssi + 120.0)) * pkt.freshness / (1.0 + d / 180.0 + 0.9 * pkt.hop_count)
+                    node_score = max(0.0, (pkt.source_rssi + 120.0)) * pkt.freshness / (1.0 + d / 80.0 + 0.9 * pkt.hop_count)
                     score += node_score
-                norm = clamp(score / 55.0, 0.0, 1.0)
+                norm = clamp(score / 100.0, 0.0, 1.0)
                 alpha = int(90 * norm)
                 pygame.draw.rect(surface, (220, 40, 40, alpha), (sx, sy, cell, cell))
         screen.blit(surface, (0, 0))
