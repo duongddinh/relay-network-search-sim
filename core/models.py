@@ -44,6 +44,7 @@ class Target:
     moving: bool = False
     waypoint: Optional[Tuple[float, float]] = None
     repath_at: float = 0.0
+    trail: List[Tuple[float, float]] = field(default_factory=list)
 
 @dataclass
 class Robot:

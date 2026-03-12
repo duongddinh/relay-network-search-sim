@@ -3,7 +3,7 @@ from typing import List, Tuple, Optional
 import pygame
 
 from config.settings import *
-from core.models import Robot
+from core.models import Robot, Target
 from utils.math_utils import clamp, dist
 
 class DashboardRenderer:
@@ -168,6 +168,10 @@ class DashboardRenderer:
             pygame.draw.line(sim_surface, ESTIMATE_COLOR, self.world_to_screen(env, env.robot.x, env.robot.y), (ex, ey), 1)
             est_label = self.font.render("EST", True, ESTIMATE_COLOR)
             sim_surface.blit(est_label, (ex + 20, ey - 8))
+
+        if len(env.target.trail) > 1:
+            trail_points = [self.world_to_screen(env, x, y) for x, y in env.target.trail]
+            pygame.draw.lines(sim_surface, (220, 90, 90), False, trail_points, 2)
 
         tx, ty = self.world_to_screen(env, env.target.x, env.target.y)
         if self.show_target_always or env.target.found:

@@ -18,6 +18,8 @@ class ForestSearchEnv:
         self.nodes = generate_nodes(self.obstacles, self.num_nodes)
         self.node_neighbors = self.build_node_graph()
         self.target = generate_target(self.obstacles)
+        self.target.trail.append((self.target.x, self.target.y))
+
         self.robot = Robot(120, 120)
         self.random_bot = Robot(180, 120)
 
@@ -121,6 +123,10 @@ class ForestSearchEnv:
         ny = ty + (dy / d) * step
         if self.flying_robot or not self.collides(nx, ny, TARGET_RADIUS):
             self.target.x, self.target.y = nx, ny
+            if not self.target.trail or dist(self.target.trail[-1], (self.target.x, self.target.y)) > 6:
+                self.target.trail.append((self.target.x, self.target.y))
+            if len(self.target.trail) > 800:
+                self.target.trail.pop(0)
         else:
             self.target.waypoint = self.random_free_point(margin=80.0)
             self.target.repath_at = self.time_elapsed + 2.0
@@ -226,7 +232,7 @@ class ForestSearchEnv:
                 b = self.nodes[nbr]
                 d = dist((a.x, a.y), (b.x, b.y))
                 blockers = self.path_blockers((a.x, a.y), (b.x, b.y))
-                forwarded_rssi = pkt.source_rssi - 0.14 * d / 10.0 - blockers * random.uniform(0.4, 1.2) + random.gauss(0, EDGE_JITTER_STD)
+                forwarded_rssi = pkt.source_rssi - 10 * 2 * math.log10(max(d, 1.0)) - blockers * random.uniform(0.4, 1.2) + random.gauss(0, EDGE_JITTER_STD)
                 new_pkt = PropagatedPacket(seed_packet.origin_id, nbr, pkt.hop_count + 1, forwarded_rssi, max(0.0, pkt.freshness - 0.12), self.time_elapsed, pkt.path + [nbr])
                 q.append(new_pkt)
                 best_seen[nbr] = new_pkt.hop_count
@@ -246,7 +252,7 @@ class ForestSearchEnv:
             blockers = self.path_blockers((self.robot.x, self.robot.y), (node.x, node.y))
             p_success = clamp(0.96 - 0.24 * (d_robot / SENSOR_RANGE) - 0.08 * blockers, 0.08, 0.98)
             delivered = random.random() < p_success
-            robot_link_rssi = pkt.source_rssi - 0.12 * d_robot / 10.0 - blockers * random.uniform(0.5, 1.3) + random.gauss(0, 1.1)
+            robot_link_rssi = pkt.source_rssi - 10 * 2 * math.log10(max(d_robot, 1.0)) - blockers * random.uniform(0.5, 1.3) + random.gauss(0, 1.1)
             observations.append(RobotObservation(node_id, pkt.hop_count, pkt.source_rssi, max(0.0, 1.0 - (self.time_elapsed - pkt.delivered_time) / PACKET_TTL), robot_link_rssi, delivered))
         return observations
 
@@ -448,7 +454,7 @@ class ForestSearchEnv:
                 bot.trail.append((bot.x, bot.y))
                 if len(bot.trail) > 700:
                     bot.trail.pop(0)
-                    
+
         if keys[pygame.K_LEFT]:
             self.camera[0] -= CAMERA_PAN_SPEED * dt
             self.manual_camera = True
