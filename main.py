@@ -6,6 +6,7 @@ from config.settings import (
     TARGET_REPATH_TIME, RIGHT_VIEW_HEIGHT, RIGHT_VIEW_WIDTH
 )
 from core.environment import ForestSearchEnv
+from core.renderer import DashboardRenderer
 from utils.math_utils import clamp
 
 def main():
@@ -14,11 +15,11 @@ def main():
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
     clock = pygame.time.Clock()
 
+    # The Logic Engine
     env = ForestSearchEnv()
-    # Initialize fonts after pygame.init()
-    env.font = pygame.font.SysFont("consolas", 17)
-    env.big_font = pygame.font.SysFont("consolas", 23, bold=True)
-    env.small_font = pygame.font.SysFont("consolas", 13)
+    
+    # The Visual UI Component
+    renderer = DashboardRenderer()
 
     running = True
     while running:
@@ -33,28 +34,26 @@ def main():
                 if mx >= RIGHT_X and my >= TOP_Y:
                     mods = pygame.key.get_mods()
                     if mods & pygame.KMOD_SHIFT:
-                        env.panel_scroll_x -= event.y * 30
+                        renderer.panel_scroll_x -= event.y * 30
                     else:
-                        env.panel_scroll -= event.y * 30
+                        renderer.panel_scroll -= event.y * 30
                         
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_r:
                     env.reset()
-                    env.font = pygame.font.SysFont("consolas", 17)
-                    env.big_font = pygame.font.SysFont("consolas", 23, bold=True)
-                    env.small_font = pygame.font.SysFont("consolas", 13)
+                    renderer.setup_fonts()
                 elif event.key == pygame.K_PAGEUP:
-                    env.panel_scroll -= 120
+                    renderer.panel_scroll -= 120
                 elif event.key == pygame.K_PAGEDOWN:
-                    env.panel_scroll += 120
+                    renderer.panel_scroll += 120
                 elif event.key == pygame.K_HOME:
-                    env.panel_scroll_x -= 120
+                    renderer.panel_scroll_x -= 120
                 elif event.key == pygame.K_END:
-                    env.panel_scroll_x += 120
+                    renderer.panel_scroll_x += 120
                 elif event.key == pygame.K_g:
-                    env.debug_draw_signal = not env.debug_draw_signal
+                    renderer.debug_draw_signal = not renderer.debug_draw_signal
                 elif event.key == pygame.K_v:
-                    env.show_target_always = not env.show_target_always
+                    renderer.show_target_always = not renderer.show_target_always
                 elif event.key == pygame.K_t:
                     env.target_moving_enabled = not env.target_moving_enabled
                     env.target.moving = env.target_moving_enabled
@@ -62,7 +61,7 @@ def main():
                         env.target.waypoint = env.random_free_point(margin=80.0)
                         env.target.repath_at = env.time_elapsed + TARGET_REPATH_TIME
                 elif event.key == pygame.K_p:
-                    env.show_packets = not env.show_packets
+                    renderer.show_packets = not renderer.show_packets
                 elif event.key == pygame.K_b:
                     env.random_baseline_enabled = not env.random_baseline_enabled
                 elif event.key == pygame.K_c:
@@ -78,13 +77,16 @@ def main():
                 elif event.key == pygame.K_RIGHTBRACKET:
                     env.num_nodes = min(MAX_NUM_NODES, env.num_nodes + NODE_STEP)
 
-        # Enforce scroll bounds
-        env.panel_scroll = int(clamp(env.panel_scroll, 0, max(0, env.right_content_height() - RIGHT_VIEW_HEIGHT)))
-        env.panel_scroll_x = int(clamp(env.panel_scroll_x, 0, max(0, env.right_content_width() - RIGHT_VIEW_WIDTH)))
+        # Let the environment process physics and held keys
+        keys = pygame.key.get_pressed()
+        env.update(dt, keys)
         
-        # Step the environment and render
-        env.update(dt)
-        env.draw_dashboard(screen)
+        # Enforce UI constraints for the renderer
+        renderer.panel_scroll = int(clamp(renderer.panel_scroll, 0, max(0, renderer.right_content_height() - RIGHT_VIEW_HEIGHT)))
+        renderer.panel_scroll_x = int(clamp(renderer.panel_scroll_x, 0, max(0, renderer.right_content_width() - RIGHT_VIEW_WIDTH)))
+        
+        # Draw everything
+        renderer.render(env, screen)
         pygame.display.flip()
 
     pygame.quit()
