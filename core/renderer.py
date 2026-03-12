@@ -187,6 +187,15 @@ class DashboardRenderer:
         if env.random_baseline_enabled:
             self.draw_bot(env, sim_surface, env.random_bot, RANDOM_BOT_COLOR, "RANDOM", RANDOM_TRAIL_COLOR)
 
+        if env.info_bot_enabled:
+            self.draw_bot(env, sim_surface, env.info_bot, INFO_BOT_COLOR, "INFO", INFO_TRAIL_COLOR)
+
+        if env.info_bot_enabled and env.info_waypoint is not None and not env.info_bot.found_target:
+            wx, wy = self.world_to_screen(env, *env.info_waypoint)
+            pygame.draw.circle(sim_surface, INFO_BOT_COLOR, (wx, wy), 8, 1)
+            wp = self.small_font.render("IWP", True, INFO_BOT_COLOR)
+            sim_surface.blit(wp, (wx + 10, wy - 10))
+
         if env.current_waypoint is not None and not env.robot.found_target:
             wx, wy = self.world_to_screen(env, *env.current_waypoint)
             pygame.draw.circle(sim_surface, (40, 40, 40), (wx, wy), 10, 1)
@@ -262,6 +271,12 @@ class DashboardRenderer:
             ("Guided found time", self.format_time(env.robot.found_time), ROBOT_COLOR),
             ("Random found time", self.format_time(env.random_bot.found_time) if env.random_baseline_enabled else "--", RANDOM_BOT_COLOR),
             ("Winner so far", winner, GOOD_COLOR if winner == "Guided" else (WARN_COLOR if winner == "Random" else TEXT_COLOR)),
+            ("INFO enabled", "YES" if env.info_bot_enabled else "NO", INFO_BOT_COLOR),
+            ("INFO pos", f"({int(env.info_bot.x)}, {int(env.info_bot.y)})", INFO_BOT_COLOR),
+            ("INFO heading", f"{math.degrees(env.info_bot.heading)%360:0.1f} deg", INFO_BOT_COLOR),
+            ("INFO speed", f"{env.info_bot.speed:0.1f}", INFO_BOT_COLOR),
+            ("INFO waypoint", f"{tuple(map(int, env.info_waypoint)) if env.info_waypoint else 'None'}", INFO_BOT_COLOR),
+            ("INFO found time", self.format_time(env.info_bot.found_time), INFO_BOT_COLOR),
         ]
         self.draw_kv_lines(content, stats_rect, stats_rows)
 
@@ -304,6 +319,8 @@ class DashboardRenderer:
             ("Random waypoint", f"{tuple(map(int, env.random_bot.waypoint)) if env.random_bot.waypoint else 'None'}" if env.random_baseline_enabled else "--", RANDOM_BOT_COLOR),
             ("Anti-stall", f"{STALL_TIME:0.1f}s -> jump {RANDOM_EXPLORE_MIN_RADIUS:.0f}-{RANDOM_EXPLORE_MAX_RADIUS:.0f}", TEXT_COLOR),
             ("Local probe", f"{LOCAL_PROBE_TIME:0.1f}s / {LOCAL_PROBE_POINTS_BEFORE_EXIT} pts", TEXT_COLOR),
+            ("INFO status", "FOUND" if env.info_bot.found_target else "SEARCHING", INFO_BOT_COLOR),
+            ("INFO time", self.format_time(env.info_bot.found_time), INFO_BOT_COLOR),
         ]
         self.draw_kv_lines(content, baseline_rect, baseline_rows)
 

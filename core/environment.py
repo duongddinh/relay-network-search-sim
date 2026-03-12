@@ -23,6 +23,12 @@ class ForestSearchEnv:
         self.robot = Robot(120, 120)
         self.random_bot = Robot(180, 120)
 
+        self.info_bot = Robot(240, 120)
+        self.info_bot_enabled = True
+        self.info_waypoint: Optional[Tuple[float, float]] = None
+        self.info_replan_at = 0.0
+        self.info_recent_positions: List[Tuple[float, float, float]] = []
+
         self.camera = [0.0, 0.0]
         self.target_moving_enabled = False
         self.target.moving = self.target_moving_enabled
@@ -85,6 +91,14 @@ class ForestSearchEnv:
         self.random_bot.found_target = False
         self.random_bot.waypoint = None
         self.random_bot.repath_at = 0.0
+        self.info_bot.found_time = None
+        
+        self.info_bot.found_target = False
+        self.info_bot.waypoint = None
+        self.info_bot.repath_at = 0.0
+        self.info_waypoint = None
+        self.info_replan_at = 0.0
+        self.info_recent_positions = []
 
     def reset(self):
         moving_enabled = self.target_moving_enabled
@@ -266,7 +280,15 @@ class ForestSearchEnv:
         weighted_x = weighted_y = total_w = 0.0
         for obs in top:
             node = self.nodes[obs.node_id]
-            w = max(0.5, (obs.robot_link_rssi + 130.0) * 0.06 + 2.2 * obs.freshness - 0.35 * obs.hop_count)
+            RSSI_MIN = -200.0
+            RSSI_MAX = -40.0
+
+            signal = clamp(
+                (obs.robot_link_rssi - RSSI_MIN) / (RSSI_MAX - RSSI_MIN),
+                0.0,
+                1.0
+            )
+            w = max(0.5, 4.5 * signal + 2.2 * obs.freshness - 0.35 * obs.hop_count)
             weighted_x += node.x * w
             weighted_y += node.y * w
             total_w += w
@@ -300,6 +322,82 @@ class ForestSearchEnv:
             self.sweep_index += 1
             wp = self.sweep_points[self.sweep_index % len(self.sweep_points)]
         return wp
+
+    def update_info_bot_memory(self):
+        self.info_recent_positions.append((self.info_bot.x, self.info_bot.y, self.time_elapsed))
+        self.info_recent_positions = [
+            p for p in self.info_recent_positions
+            if (self.time_elapsed - p[2]) <= INFO_VISIT_MEMORY
+        ]
+
+
+    def sample_info_candidates(self) -> List[Tuple[float, float]]:
+        candidates = []
+        for _ in range(INFO_CANDIDATE_COUNT):
+            angle = random.uniform(0, 2 * math.pi)
+            radius = random.uniform(INFO_MIN_RADIUS, INFO_MAX_RADIUS)
+            x = clamp(self.info_bot.x + math.cos(angle) * radius, 40, WORLD_WIDTH - 40)
+            y = clamp(self.info_bot.y + math.sin(angle) * radius, 40, WORLD_HEIGHT - 40)
+            if not self.collides(x, y, ROBOT_RADIUS + 4):
+                candidates.append((x, y))
+        return candidates
+
+
+    def score_info_candidate(self, point: Tuple[float, float]) -> float:
+        packet_score = 0.0
+        for node_id, pkt in self.active_packets.items():
+            node = self.nodes[node_id]
+            d = dist(point, (node.x, node.y))
+
+            strength = max(0.0, pkt.source_rssi + 180.0)
+
+            packet_score +=  strength * pkt.freshness / (1.0 + d / 120.0 + 0.8 * pkt.hop_count)
+
+        estimate_score = 0.0
+        if self.best_estimate is not None:
+            d_est = dist(point, self.best_estimate)
+            estimate_score = 1.0 / (1.0 + d_est / 160.0)
+
+        min_recent_dist = float("inf")
+        revisit_penalty = 0.0
+        for px, py, t in self.info_recent_positions:
+            d = dist(point, (px, py))
+            min_recent_dist = min(min_recent_dist, d)
+            if d < INFO_VISIT_RADIUS:
+                revisit_penalty += (INFO_VISIT_RADIUS - d)
+
+        explore_score = 1.5 if min_recent_dist == float("inf") else min(min_recent_dist / INFO_VISIT_RADIUS, 1.5)
+
+        desired_heading = math.atan2(point[1] - self.info_bot.y, point[0] - self.info_bot.x)
+        turn_penalty = abs(angle_wrap(desired_heading - self.info_bot.heading))
+
+        return (
+            INFO_PACKET_WEIGHT * packet_score
+            + INFO_ESTIMATE_WEIGHT * estimate_score
+            + INFO_EXPLORE_WEIGHT * explore_score
+            - INFO_REVISIT_WEIGHT * revisit_penalty
+            - INFO_TURN_WEIGHT * turn_penalty
+        )
+
+
+    def choose_info_waypoint(self) -> Tuple[float, float]:
+        candidates = self.sample_info_candidates()
+        if not candidates:
+            return (self.info_bot.x, self.info_bot.y)
+        return max(candidates, key=self.score_info_candidate)
+
+    def update_info_bot(self, dt: float):
+        if not self.info_bot_enabled or self.info_bot.found_target:
+            self.info_bot.speed = 0.0
+            return
+
+        if self.time_elapsed >= self.info_replan_at or self.info_waypoint is None:
+            self.info_waypoint = self.choose_info_waypoint()
+            self.info_replan_at = self.time_elapsed + INFO_REPLAN_PERIOD
+
+        self.steer_bot_toward(self.info_bot, self.info_waypoint, dt, INFO_BOT_SPEED)
+        self.update_info_bot_memory()
+
 
     def choose_random_explore_waypoint(self) -> Tuple[float, float]:
         best = None
@@ -448,8 +546,9 @@ class ForestSearchEnv:
             if self.collides(self.robot.x, self.robot.y, ROBOT_RADIUS):
                 self.robot.x, self.robot.y = old_x, old_y
         self.update_random_baseline(dt)
-        
-        for bot in (self.robot, self.random_bot):
+        self.update_info_bot(dt)
+
+        for bot in (self.robot, self.random_bot, self.info_bot):
             if not bot.trail or dist(bot.trail[-1], (bot.x, bot.y)) > 8:
                 bot.trail.append((bot.x, bot.y))
                 if len(bot.trail) > 700:
@@ -488,11 +587,11 @@ class ForestSearchEnv:
         self.last_robot_decodes = self.last_robot_decodes[:10]
         self.update_estimate()
         
-        for bot in (self.robot, self.random_bot):
+        for bot in (self.robot, self.random_bot, self.info_bot):
             if not bot.found_target and dist((bot.x, bot.y), (self.target.x, self.target.y)) <= TARGET_REVEAL_RANGE:
                 bot.found_target = True
                 bot.found_time = self.time_elapsed
-        self.target.found = self.robot.found_target or self.random_bot.found_target
+        self.target.found = self.robot.found_target or self.random_bot.found_target or self.info_bot.found_target
         
         if not self.manual_camera:
             self.camera[0] = clamp(self.robot.x - SIM_WIDTH / 2, 0, WORLD_WIDTH - SIM_WIDTH)

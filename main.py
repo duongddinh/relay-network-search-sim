@@ -76,6 +76,8 @@ def main():
                     env.num_nodes = max(MIN_NUM_NODES, env.num_nodes - NODE_STEP)
                 elif event.key == pygame.K_RIGHTBRACKET:
                     env.num_nodes = min(MAX_NUM_NODES, env.num_nodes + NODE_STEP)
+                elif event.key == pygame.K_i:
+                    env.info_bot_enabled = not env.info_bot_enabled
 
         # Let the environment process physics and held keys
         keys = pygame.key.get_pressed()
